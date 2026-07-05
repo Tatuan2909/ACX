@@ -2,10 +2,27 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Menu, X, ArrowRight, ArrowUpRight, Check, Sun, ShieldCheck,
   Gauge, Sparkles, PhoneCall, Mail, MapPin, ChevronDown,
-  Facebook, Instagram, Linkedin, Zap, User, Lock, Eye, EyeOff, LogOut, Loader2,
+  Facebook, Instagram, Zap, User, Lock, Eye, EyeOff, LogOut, Loader2,
   ShoppingBag, Wallet, Copy, Clock3, AlertTriangle
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
+
+/* Lucide has no Discord logo (they don't ship brand icons), so a small inline
+   SVG stand-in is used for the footer social link instead. */
+function DiscordIcon({ size = 18 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037 19.736 19.736 0 0 0-4.885 1.515.07.07 0 0 0-.032.027C.533 9.045-.32 13.579.099 18.057a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.061 0a.073.073 0 0 1 .078.01c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.076.076 0 0 0-.04.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.029 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.055c.5-5.177-.838-9.674-3.548-13.66a.06.06 0 0 0-.031-.028ZM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.955 2.418-2.157 2.418Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418Z" />
+    </svg>
+  );
+}
 
 /* =========================================================================
    ACX — Premium Panel Store
@@ -800,7 +817,7 @@ function Hero() {
         </Reveal>
 
         <Reveal delay={240} className="hero__actions">
-          <a href="#pricing" className="btn btn--solid btn--lg">
+          <a href="#products" className="btn btn--solid btn--lg">
             Buy Now <ArrowRight size={18} />
           </a>
           <a href="#contact" className="btn btn--outline btn--lg">
@@ -1170,7 +1187,7 @@ function SePayQrPanel({ request, onConfirmed, onCancel }) {
             <span>Mã QR đã hết hạn. Vui lòng tạo yêu cầu nạp tiền mới.</span>
           </div>
         ) : (
-          <img src={qrUrl} alt="Mã QR chuyển khoản" width={220} height={220} />
+          <img src={qrUrl} alt="Mã QR chuyển khoản SePay" width={220} height={220} />
         )}
       </div>
 
@@ -1210,7 +1227,7 @@ function SePayQrPanel({ request, onConfirmed, onCancel }) {
 
         <p className="sepay-panel__note">
           Nhập <strong>đúng nội dung</strong> chuyển khoản ở trên (giữ nguyên, không thêm bớt ký tự) để
-          hệ thống tự động đối soát và cộng tiền vào ví trong vài giây sau khi giao dịch thành
+          hệ thống SePay tự động đối soát và cộng tiền vào ví trong vài giây sau khi giao dịch thành
           công.
         </p>
 
@@ -1410,17 +1427,38 @@ function Footer() {
           </a>
           <p>Cung Cấp Phần Mềm Hỗ Trợ Full Đỏ.</p>
           <div className="footer__social">
-            <a href="#" aria-label="Facebook"><Facebook size={18} /></a>
-            <a href="#" aria-label="Instagram"><Instagram size={18} /></a>
-            <a href="#" aria-label="LinkedIn"><Linkedin size={18} /></a>
+            <a
+              href="https://www.facebook.com/tatuananh.info/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Facebook"
+            >
+              <Facebook size={18} />
+            </a>
+            <a
+              href="https://www.instagram.com/tuanahnbel/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Instagram"
+            >
+              <Instagram size={18} />
+            </a>
+            <a
+              href="https://discord.gg/n9kQcFM4m"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Discord"
+            >
+              <DiscordIcon size={18} />
+            </a>
           </div>
         </div>
 
         <div className="footer__col">
           <h4>Products</h4>
-          	<a href="#products">ACX MODMENU</a>
- 	 	<a href="#products">ACX AIMNECK</a>
-          	<a href="#products">BYPASS</a>
+          <a href="#products">ACX CHEAT</a>
+ 	  <a href="#products">BYPASS</a>
+          <a href="#products">BYPASS</a>
         </div>
       </div>
 
