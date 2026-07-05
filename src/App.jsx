@@ -1227,7 +1227,7 @@ function SePayQrPanel({ request, onConfirmed, onCancel }) {
 
         <p className="sepay-panel__note">
           Nhập <strong>đúng nội dung</strong> chuyển khoản ở trên (giữ nguyên, không thêm bớt ký tự) để
-          hệ thống SePay tự động đối soát và cộng tiền vào ví trong vài giây sau khi giao dịch thành
+          hệ thống tự động đối soát và cộng tiền vào ví trong vài giây sau khi giao dịch thành
           công.
         </p>
 
@@ -1456,8 +1456,8 @@ function Footer() {
 
         <div className="footer__col">
           <h4>Products</h4>
-          <a href="#products">ACX CHEAT</a>
- 	  <a href="#products">BYPASS</a>
+          <a href="#products">ACX MENU PRO</a>
+ 	  <a href="#products">ACX AIMNECK</a>
           <a href="#products">BYPASS</a>
         </div>
       </div>
