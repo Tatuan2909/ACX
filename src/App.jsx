@@ -3,7 +3,7 @@ import {
   Menu, X, ArrowRight, ArrowUpRight, Check, Sun, ShieldCheck,
   Gauge, Sparkles, PhoneCall, Mail, MapPin, ChevronDown,
   Facebook, Instagram, Zap, User, Lock, Eye, EyeOff, LogOut, Loader2,
-  ShoppingBag, Wallet, Copy, Clock3, AlertTriangle
+  ShoppingBag, Wallet, Copy, Clock3, AlertTriangle, Download, FileDown
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -202,7 +202,7 @@ function AuthModal({ open, mode, onClose, onModeChange }) {
           </div>
         ) : (
           <>
-            <div className="authmodal__head">
+            <div className="authmodal__head" key={isLogin ? "head-login" : "head-register"}>
               <span className="nav__logo-mark">A</span>
               <h3>{isLogin ? "Welcome back" : "Create your ACX account"}</h3>
               <p>
@@ -213,6 +213,10 @@ function AuthModal({ open, mode, onClose, onModeChange }) {
             </div>
 
             <div className="authmodal__tabs">
+              <span
+                className="authmodal__tab-thumb"
+                style={{ transform: isLogin ? "translateX(0%)" : "translateX(100%)" }}
+              />
               <button
                 className={`authmodal__tab ${isLogin ? "authmodal__tab--active" : ""}`}
                 onClick={() => onModeChange("login")}
@@ -229,7 +233,7 @@ function AuthModal({ open, mode, onClose, onModeChange }) {
               </button>
             </div>
 
-            <form className="authmodal__form" onSubmit={handleSubmit}>
+            <form className="authmodal__form" key={isLogin ? "login" : "register"} onSubmit={handleSubmit}>
               {!isLogin && (
                 <label className="authmodal__field">
                   <span>Full Name</span>
@@ -324,15 +328,10 @@ function AuthModal({ open, mode, onClose, onModeChange }) {
                 </label>
               )}
 
-              {isLogin ? (
+              {isLogin && (
                 <a href="#" className="authmodal__forgot">
                   Forgot password?
                 </a>
-              ) : (
-                <label className="authmodal__terms">
-                  <input type="checkbox" required />
-                  <span>I agree to ACX's Terms of Service and Privacy Policy.</span>
-                </label>
               )}
 
               {errorMsg && <div className="authmodal__error">{errorMsg}</div>}
@@ -543,7 +542,7 @@ function BuyModal({ product, pricingOptions, onClose, user, onAuthOpen, onPurcha
               >
                 {pricingOptions.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {o.label} — {o.price.toLocaleString("vi-VN")}₫
+                    {o.label} - {o.price.toLocaleString("vi-VN")}₫
                   </option>
                 ))}
               </select>
@@ -610,6 +609,7 @@ function Nav({ onAuthOpen, user, onLogout, page, onNavigate, profile }) {
 
   const links = [
     { label: "Products", target: "home", scrollTo: "products" },
+    { label: "Tải xuống", target: "downloads" },
     { label: "Nạp tiền", target: "topup" },
     { label: "Lịch sử mua hàng", target: "history" },
   ];
@@ -1227,7 +1227,7 @@ function SePayQrPanel({ request, onConfirmed, onCancel }) {
 
         <p className="sepay-panel__note">
           Nhập <strong>đúng nội dung</strong> chuyển khoản ở trên (giữ nguyên, không thêm bớt ký tự) để
-          hệ thống tự động đối soát và cộng tiền vào ví trong vài giây sau khi giao dịch thành
+          hệ thống SePay tự động đối soát và cộng tiền vào ví trong vài giây sau khi giao dịch thành
           công.
         </p>
 
@@ -1415,6 +1415,96 @@ function TopUpPage({ user, onAuthOpen, profile, onWalletChange }) {
   );
 }
 
+/* --- Downloads Page ------------------------------------------------------------- */
+function DownloadsPage() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    supabase
+      .from("downloads")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setErrorMsg(error.message);
+        } else {
+          setItems(data || []);
+        }
+        setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  function formatDate(iso) {
+    if (!iso) return "";
+    return new Date(iso).toLocaleDateString("vi-VN");
+  }
+
+  return (
+    <section className="page-section">
+      <div className="container">
+        <Reveal className="eyebrow">
+          <FileDown size={14} /> TẢI XUỐNG
+        </Reveal>
+        <Reveal as="h1" delay={80} className="page-section__title">
+          Công cụ &amp; File tải xuống
+        </Reveal>
+        <Reveal delay={140} className="page-section__lede">
+          Tải phiên bản mới nhất của các công cụ ACX. Danh sách được cập nhật thường xuyên.
+        </Reveal>
+
+        {loading ? (
+          <div className="products-state">
+            <Loader2 size={22} className="authmodal__spinner" />
+            <span>Đang tải danh sách file…</span>
+          </div>
+        ) : errorMsg ? (
+          <div className="products-state products-state--error">{errorMsg}</div>
+        ) : items.length === 0 ? (
+          <Reveal delay={200} className="empty-state">
+            <p>Hiện chưa có file nào để tải xuống.</p>
+          </Reveal>
+        ) : (
+          <Reveal delay={200} className="downloads-list">
+            {items.map((item) => (
+              <div className="download-card" key={item.id}>
+                <div className="download-card__icon">
+                  <FileDown size={20} />
+                </div>
+                <div className="download-card__info">
+                  <h3>
+                    {item.name}
+                    {item.version && <span className="download-card__version">v{item.version}</span>}
+                  </h3>
+                  {item.description && <p>{item.description}</p>}
+                  {item.created_at && (
+                    <span className="download-card__date">Cập nhật: {formatDate(item.created_at)}</span>
+                  )}
+                </div>
+                <a
+                  className="btn btn--solid btn--sm download-card__btn"
+                  href={item.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download
+                >
+                  <Download size={15} /> Tải xuống
+                </a>
+              </div>
+            ))}
+          </Reveal>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /* --- Footer ------------------------------------------------------------------ */
 function Footer() {
   return (
@@ -1453,13 +1543,6 @@ function Footer() {
             </a>
           </div>
         </div>
-
-        <div className="footer__col">
-          <h4>Products</h4>
-          <a href="#products">ACX MENU PRO</a>
- 	  <a href="#products">ACX AIMNECK</a>
-          <a href="#products">BYPASS</a>
-        </div>
       </div>
 
       <div className="container footer__bottom">
@@ -1478,6 +1561,7 @@ function hashToPage(hash) {
   const h = hash.replace("#", "");
   if (h === "history") return "history";
   if (h === "topup") return "topup";
+  if (h === "downloads") return "downloads";
   return "home";
 }
 
@@ -1587,6 +1671,7 @@ export default function App() {
       {page === "topup" && (
         <TopUpPage user={user} onAuthOpen={openAuth} profile={profile} onWalletChange={refreshWallet} />
       )}
+      {page === "downloads" && <DownloadsPage />}
       {page === "home" && (
         <>
           <Hero />
@@ -1877,20 +1962,32 @@ function Style() {
         color: var(--muted); cursor: pointer; transition: color .2s ease;
       }
       .authmodal__close:hover { color: var(--text); }
-      .authmodal__head { text-align: center; margin-bottom: 22px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+      .authmodal__head { text-align: center; margin-bottom: 22px; display: flex; flex-direction: column; align-items: center; gap: 10px; animation: authFormIn .28s cubic-bezier(.25,.8,.35,1); }
       .authmodal__head h3 { font-size: 1.3rem; }
       .authmodal__head p { font-size: .85rem; max-width: 300px; }
       .authmodal__tabs {
-        display: flex; background: var(--bg-2); border: 1px solid var(--border);
+        display: flex; position: relative; background: var(--bg-2); border: 1px solid var(--border);
         border-radius: 999px; padding: 4px; margin-bottom: 26px;
       }
-      .authmodal__tab {
-        flex: 1; padding: 9px 0; border: none; background: none; color: var(--muted);
-        font-weight: 600; font-size: .87rem; border-radius: 999px; cursor: pointer;
-        transition: background .25s ease, color .25s ease; font-family: 'Inter', sans-serif;
+      .authmodal__tab-thumb {
+        position: absolute; top: 4px; left: 4px; width: calc(50% - 4px); height: calc(100% - 8px);
+        background: var(--accent); border-radius: 999px;
+        transition: transform .3s cubic-bezier(.65,0,.35,1);
       }
-      .authmodal__tab--active { background: var(--accent); color: #0A0A0C; }
-      .authmodal__form { display: flex; flex-direction: column; gap: 16px; }
+      .authmodal__tab {
+        position: relative; z-index: 1; flex: 1; padding: 9px 0; border: none; background: none; color: var(--muted);
+        font-weight: 600; font-size: .87rem; border-radius: 999px; cursor: pointer;
+        transition: color .25s ease; font-family: 'Inter', sans-serif;
+      }
+      .authmodal__tab--active { color: #0A0A0C; }
+      .authmodal__form {
+        display: flex; flex-direction: column; gap: 16px;
+        animation: authFormIn .28s cubic-bezier(.25,.8,.35,1);
+      }
+      @keyframes authFormIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
       .authmodal__field { display: flex; flex-direction: column; gap: 7px; font-size: .82rem; color: var(--muted); }
       .authmodal__input {
         display: flex; align-items: center; gap: 10px; background: var(--bg-2);
@@ -1973,6 +2070,31 @@ function Style() {
 
       /* Order table */
       .order-table { margin-top: 40px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+
+      .downloads-list { margin-top: 40px; display: flex; flex-direction: column; gap: 14px; }
+      .download-card {
+        display: flex; align-items: center; gap: 16px; background: var(--bg-elev);
+        border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px;
+        transition: border-color .2s ease;
+      }
+      .download-card:hover { border-color: rgba(201,162,39,0.35); }
+      .download-card__icon {
+        flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px;
+        background: rgba(201,162,39,0.12); color: var(--accent-soft); display: grid; place-items: center;
+      }
+      .download-card__info { flex: 1; min-width: 0; }
+      .download-card__info h3 { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .download-card__version {
+        font-family: 'IBM Plex Mono', monospace; font-size: .72rem; color: var(--accent-soft);
+        background: rgba(201,162,39,0.12); border-radius: 999px; padding: 2px 9px;
+      }
+      .download-card__info p { font-size: .85rem; color: var(--muted); margin-top: 4px; }
+      .download-card__date { display: block; font-size: .74rem; color: var(--muted); margin-top: 6px; }
+      .download-card__btn { flex: 0 0 auto; white-space: nowrap; }
+      @media (max-width: 560px) {
+        .download-card { flex-wrap: wrap; }
+        .download-card__btn { width: 100%; justify-content: center; }
+      }
       .order-table__head, .order-table__row {
         display: grid; grid-template-columns: .9fr 1.3fr .9fr .9fr .9fr 1.3fr; gap: 10px; padding: 16px 22px; align-items: center;
       }
