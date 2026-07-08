@@ -3,7 +3,8 @@ import {
   Menu, X, ArrowRight, ArrowUpRight, Check, Sun, ShieldCheck,
   Gauge, Sparkles, PhoneCall, Mail, MapPin, ChevronDown,
   Facebook, Instagram, Zap, User, Lock, Eye, EyeOff, LogOut, Loader2,
-  ShoppingBag, Wallet, Copy, Clock3, AlertTriangle, Download, FileDown
+  ShoppingBag, Wallet, Copy, Clock3, AlertTriangle, Download, FileDown,
+  Coins, Minus, Plus
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -609,6 +610,7 @@ function Nav({ onAuthOpen, user, onLogout, page, onNavigate, profile }) {
 
   const links = [
     { label: "Products", target: "home", scrollTo: "products" },
+    { label: "Mua Token", target: "buy-token" },
     { label: "Tải xuống", target: "downloads" },
     { label: "Nạp tiền", target: "topup" },
     { label: "Lịch sử mua hàng", target: "history" },
@@ -1415,6 +1417,351 @@ function TopUpPage({ user, onAuthOpen, profile, onWalletChange }) {
   );
 }
 
+/* --- Buy Token Page -------------------------------------------------------------- */
+function BuyTokenPage({ user, onAuthOpen, profile, onWalletChange }) {
+  const [settings, setSettings] = useState(null);
+  const [stockCount, setStockCount] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+
+  const [quantity, setQuantity] = useState(1);
+  const [buying, setBuying] = useState(false);
+  const [buyError, setBuyError] = useState("");
+  const [delivered, setDelivered] = useState(null); // array of token strings just purchased
+  const [deliveredOrderId, setDeliveredOrderId] = useState(null);
+
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [expandedOrder, setExpandedOrder] = useState(null);
+  const [expandedTokens, setExpandedTokens] = useState({});
+
+  const balance = profile?.wallet_balance ?? 0;
+
+  function downloadTokensTxt(tokens, filename) {
+    const blob = new Blob([tokens.join("\r\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadSettingsAndStock() {
+    setLoading(true);
+    setLoadError("");
+
+    const [{ data: settingsRow, error: settingsErr }, { data: countRes, error: countErr }] =
+      await Promise.all([
+        supabase.from("token_settings").select("*").limit(1).single(),
+        supabase.rpc("get_token_stock_count"),
+      ]);
+
+    if (settingsErr) {
+      setLoadError(settingsErr.message);
+    } else {
+      setSettings(settingsRow);
+    }
+    if (!countErr) setStockCount(countRes ?? 0);
+
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadSettingsAndStock();
+  }, []);
+
+  function loadHistory() {
+    if (!user) return;
+    setHistoryLoading(true);
+    supabase
+      .from("token_orders")
+      .select("id, quantity, unit_price, total_price, status, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (!error) setHistory(data || []);
+        setHistoryLoading(false);
+      });
+  }
+
+  useEffect(() => {
+    loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const unitPrice = settings?.unit_price ?? 0;
+  const total = quantity * unitPrice;
+  const maxQty = stockCount ?? 0;
+  const soldOut = maxQty <= 0;
+
+  function adjustQty(delta) {
+    setQuantity((q) => {
+      const next = q + delta;
+      if (next < 1) return 1;
+      if (maxQty && next > maxQty) return maxQty;
+      return next;
+    });
+  }
+
+  async function handleBuy() {
+    if (!user) {
+      onAuthOpen("login");
+      return;
+    }
+    if (quantity < 1) return;
+
+    setBuying(true);
+    setBuyError("");
+    setDelivered(null);
+    setDeliveredOrderId(null);
+
+    const { data: order, error } = await supabase.rpc("buy_tokens", {
+      p_quantity: quantity,
+    });
+
+    if (error) {
+      setBuying(false);
+      setBuyError(error.message);
+      return;
+    }
+
+    const { data: tokens, error: tokensErr } = await supabase
+      .from("token_stock")
+      .select("content")
+      .eq("order_id", order.id)
+      .order("sold_at", { ascending: true });
+
+    setBuying(false);
+
+    if (tokensErr) {
+      setBuyError(
+        "Đã mua thành công nhưng không tải được nội dung token. Vui lòng xem lại trong Lịch sử mua Token bên dưới."
+      );
+    } else {
+      const contents = (tokens || []).map((t) => t.content);
+      setDelivered(contents);
+      setDeliveredOrderId(order.id);
+      downloadTokensTxt(contents, `acx-tokens-${order.id.slice(0, 8)}.txt`);
+    }
+
+    setQuantity(1);
+    loadSettingsAndStock();
+    loadHistory();
+    onWalletChange?.();
+  }
+
+  function toggleOrder(orderId) {
+    if (expandedOrder === orderId) {
+      setExpandedOrder(null);
+      return;
+    }
+    setExpandedOrder(orderId);
+    if (!expandedTokens[orderId]) {
+      supabase
+        .from("token_stock")
+        .select("content")
+        .eq("order_id", orderId)
+        .order("sold_at", { ascending: true })
+        .then(({ data, error }) => {
+          if (!error) {
+            setExpandedTokens((prev) => ({ ...prev, [orderId]: (data || []).map((t) => t.content) }));
+          }
+        });
+    }
+  }
+
+  function formatDate(iso) {
+    return new Date(iso).toLocaleDateString("vi-VN");
+  }
+
+  return (
+    <section className="page-section">
+      <div className="container">
+        <Reveal className="eyebrow">
+          <Coins size={14} /> MUA TOKEN
+        </Reveal>
+        <Reveal as="h1" delay={80} className="page-section__title">
+          {settings?.name || "Mua Token"}
+        </Reveal>
+        <Reveal delay={140} className="page-section__lede">
+          {settings?.description ||
+            "Chọn số lượng Token bạn muốn mua. Token sẽ được giao ngay lập tức sau khi thanh toán."}
+        </Reveal>
+
+        {loading ? (
+          <div className="products-state">
+            <Loader2 size={22} className="authmodal__spinner" />
+            <span>Đang tải…</span>
+          </div>
+        ) : loadError ? (
+          <div className="products-state products-state--error">{loadError}</div>
+        ) : (
+          <Reveal delay={200} className="token-panel">
+            <div className="token-panel__top">
+              <div className="token-panel__price">
+                <span>Đơn giá</span>
+                <strong>{unitPrice.toLocaleString("vi-VN")}₫ / token</strong>
+              </div>
+              <div className={`token-panel__stock ${soldOut ? "token-panel__stock--out" : ""}`}>
+                {soldOut ? "Hết hàng" : `Còn lại: ${maxQty.toLocaleString("vi-VN")} token`}
+              </div>
+            </div>
+
+            {!user ? (
+              <div className="empty-state">
+                <p>Vui lòng đăng nhập để mua Token.</p>
+                <button className="btn btn--solid" onClick={() => onAuthOpen("login")}>
+                  Đăng nhập <ArrowRight size={16} />
+                </button>
+              </div>
+            ) : soldOut ? (
+              <div className="empty-state">
+                <p>Token hiện đã tạm hết hàng. Vui lòng quay lại sau.</p>
+              </div>
+            ) : (
+              <>
+                <div className="token-panel__qty">
+                  <span>Số lượng</span>
+                  <div className="token-qty-stepper">
+                    <button type="button" onClick={() => adjustQty(-1)} disabled={quantity <= 1}>
+                      <Minus size={15} />
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={maxQty}
+                      value={quantity}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (Number.isNaN(v)) return;
+                        setQuantity(Math.max(1, Math.min(v, maxQty)));
+                      }}
+                    />
+                    <button type="button" onClick={() => adjustQty(1)} disabled={quantity >= maxQty}>
+                      <Plus size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="token-panel__total">
+                  <span>Tổng thanh toán</span>
+                  <strong>{total.toLocaleString("vi-VN")}₫</strong>
+                </div>
+
+                {balance < total && (
+                  <div className="authmodal__error">
+                    Số dư ví không đủ ({balance.toLocaleString("vi-VN")}₫). Vui lòng nạp thêm tiền.
+                  </div>
+                )}
+                {buyError && <div className="authmodal__error">{buyError}</div>}
+
+                <button
+                  type="button"
+                  className="btn btn--solid token-panel__buy"
+                  disabled={buying || balance < total}
+                  onClick={handleBuy}
+                >
+                  {buying ? (
+                    <>
+                      <Loader2 size={16} className="authmodal__spinner" />
+                      Đang xử lý…
+                    </>
+                  ) : (
+                    <>
+                      Mua Token <ArrowRight size={16} />
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+
+            {delivered && (
+              <div className="token-delivered">
+                <div className="token-delivered__head">
+                  <span>
+                    <Check size={14} /> Đã mua {delivered.length} token thành công
+                  </span>
+                </div>
+                <p className="token-delivered__note">
+                  File <code>acx-tokens-{deliveredOrderId?.slice(0, 8)}.txt</code> đã được tự động tải
+                  xuống. Nếu trình duyệt chặn tải tự động, bấm nút bên dưới để tải lại.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn--solid btn--sm"
+                  onClick={() =>
+                    downloadTokensTxt(delivered, `acx-tokens-${deliveredOrderId?.slice(0, 8)}.txt`)
+                  }
+                >
+                  <Download size={15} /> Tải file .txt
+                </button>
+              </div>
+            )}
+          </Reveal>
+        )}
+
+        {user && (
+          <Reveal delay={240} className="token-history">
+            <h3>Lịch sử mua Token</h3>
+            {historyLoading ? (
+              <div className="products-state">
+                <Loader2 size={20} className="authmodal__spinner" />
+              </div>
+            ) : history.length === 0 ? (
+              <p className="token-history__empty">Bạn chưa mua Token lần nào.</p>
+            ) : (
+              <div className="token-history__list">
+                {history.map((o) => (
+                  <div className="token-history__item" key={o.id}>
+                    <button
+                      type="button"
+                      className="token-history__row"
+                      onClick={() => toggleOrder(o.id)}
+                    >
+                      <span>{formatDate(o.created_at)}</span>
+                      <span>{o.quantity} token</span>
+                      <span>{Number(o.total_price).toLocaleString("vi-VN")}₫</span>
+                      <ChevronDown
+                        size={16}
+                        style={{
+                          transform: expandedOrder === o.id ? "rotate(180deg)" : "none",
+                          transition: "transform .2s ease",
+                        }}
+                      />
+                    </button>
+                    {expandedOrder === o.id && (
+                      <div className="token-history__tokens">
+                        {expandedTokens[o.id] ? (
+                          <button
+                            type="button"
+                            className="btn btn--outline btn--sm"
+                            onClick={() =>
+                              downloadTokensTxt(expandedTokens[o.id], `acx-tokens-${o.id.slice(0, 8)}.txt`)
+                            }
+                          >
+                            <Download size={15} /> Tải file .txt ({expandedTokens[o.id].length} token)
+                          </button>
+                        ) : (
+                          <span className="token-history__loading">
+                            <Loader2 size={14} className="authmodal__spinner" /> Đang tải…
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Reveal>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /* --- Downloads Page ------------------------------------------------------------- */
 function DownloadsPage() {
   const [items, setItems] = useState([]);
@@ -1562,6 +1909,7 @@ function hashToPage(hash) {
   if (h === "history") return "history";
   if (h === "topup") return "topup";
   if (h === "downloads") return "downloads";
+  if (h === "buy-token") return "buy-token";
   return "home";
 }
 
@@ -1672,6 +2020,9 @@ export default function App() {
         <TopUpPage user={user} onAuthOpen={openAuth} profile={profile} onWalletChange={refreshWallet} />
       )}
       {page === "downloads" && <DownloadsPage />}
+      {page === "buy-token" && (
+        <BuyTokenPage user={user} onAuthOpen={openAuth} profile={profile} onWalletChange={refreshWallet} />
+      )}
       {page === "home" && (
         <>
           <Hero />
@@ -1752,7 +2103,7 @@ function Style() {
       .btn:hover { transform: translateY(-2px); }
       .btn--solid { background: var(--accent); color: #0A0A0C; }
       .btn--solid:hover { background: var(--accent-soft); box-shadow: 0 10px 30px rgba(201,162,39,0.25); }
-      .btn--outline { border-color: rgba(255,255,255,0.18); color: var(--text); }
+      .btn--outline { background: transparent; border-color: rgba(255,255,255,0.18); color: var(--text); }
       .btn--outline:hover { border-color: var(--accent); color: var(--accent-soft); }
       .btn--ghost { color: var(--muted); }
       .btn--ghost:hover { color: var(--text); }
@@ -2072,6 +2423,77 @@ function Style() {
       .order-table { margin-top: 40px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 
       .downloads-list { margin-top: 40px; display: flex; flex-direction: column; gap: 14px; }
+
+      .token-panel {
+        margin-top: 40px; max-width: 560px; background: var(--bg-elev); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 28px; display: flex; flex-direction: column; gap: 18px;
+      }
+      .token-panel__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+      .token-panel__price { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; color: var(--muted); }
+      .token-panel__price strong { font-family: 'IBM Plex Mono', monospace; font-size: 1.1rem; color: var(--text); }
+      .token-panel__stock {
+        font-size: .78rem; color: var(--accent-soft); background: rgba(201,162,39,0.1);
+        border-radius: 999px; padding: 6px 14px;
+      }
+      .token-panel__stock--out { color: #e08a8a; background: rgba(217,90,90,0.12); }
+      .token-panel__qty { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .token-panel__qty > span { font-size: .82rem; color: var(--muted); }
+      .token-qty-stepper {
+        display: flex; align-items: center; gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+      }
+      .token-qty-stepper button {
+        width: 36px; height: 36px; display: grid; place-items: center; background: var(--bg-2); border: none;
+        color: var(--text); cursor: pointer; transition: background .2s ease, color .2s ease;
+      }
+      .token-qty-stepper button:hover:not(:disabled) { background: var(--accent); color: #0A0A0C; }
+      .token-qty-stepper button:disabled { opacity: .4; cursor: not-allowed; }
+      .token-qty-stepper input {
+        width: 64px; text-align: center; background: var(--bg-elev); border: none; border-left: 1px solid var(--border);
+        border-right: 1px solid var(--border); height: 36px; color: var(--text); font-family: 'IBM Plex Mono', monospace;
+        font-size: .95rem; -moz-appearance: textfield;
+      }
+      .token-qty-stepper input::-webkit-outer-spin-button,
+      .token-qty-stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      .token-panel__total {
+        display: flex; align-items: center; justify-content: space-between; padding-top: 14px; border-top: 1px solid var(--border);
+      }
+      .token-panel__total span { font-size: .82rem; color: var(--muted); }
+      .token-panel__total strong { font-family: 'IBM Plex Mono', monospace; font-size: 1.2rem; color: var(--accent-soft); }
+      .token-panel__buy { justify-content: center; }
+      .token-panel__buy:disabled { opacity: .55; cursor: not-allowed; }
+
+      .token-delivered {
+        margin-top: 4px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px;
+      }
+      .token-delivered__head { display: flex; align-items: center; justify-content: space-between; font-size: .8rem; color: var(--muted); margin-bottom: 10px; }
+      .token-delivered__head span { display: flex; align-items: center; gap: 6px; color: var(--text); font-weight: 600; }
+      .token-delivered__head svg { color: var(--accent); }
+      .token-delivered__note { font-size: .8rem; color: var(--muted); line-height: 1.5; margin-bottom: 12px; }
+      .token-delivered__note code { font-family: 'IBM Plex Mono', monospace; color: var(--accent-soft); }
+      .token-history__loading { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--muted); padding: 0 16px 16px; }
+      .token-delivered__list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+      .token-delivered__list code {
+        font-family: 'IBM Plex Mono', monospace; font-size: .82rem; color: var(--accent-soft);
+        background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+        word-break: break-all;
+      }
+
+      .token-history { margin-top: 48px; max-width: 700px; }
+      .token-history h3 { font-size: 1.05rem; margin-bottom: 16px; }
+      .token-history__empty { font-size: .85rem; color: var(--muted); }
+      .token-history__list { display: flex; flex-direction: column; gap: 10px; }
+      .token-history__item { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+      .token-history__row {
+        width: 100%; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: center;
+        padding: 14px 16px; background: none; border: none; color: var(--text); font-size: .85rem; cursor: pointer;
+        text-align: left; font-family: 'Inter', sans-serif;
+      }
+      .token-history__row:hover { background: var(--bg-2); }
+      .token-history__tokens { padding: 0 16px 16px; }
+      @media (max-width: 560px) {
+        .token-history__row { grid-template-columns: 1fr 1fr auto; }
+        .token-history__row span:nth-child(3) { display: none; }
+      }
       .download-card {
         display: flex; align-items: center; gap: 16px; background: var(--bg-elev);
         border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px;
