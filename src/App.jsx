@@ -1131,12 +1131,29 @@ function SePayQrPanel({ request, onConfirmed, onCancel }) {
     return () => clearInterval(t);
   }, [secondsLeft]);
 
+  // Keep a ref in sync with secondsLeft so the polling effect below can read
+  // the latest value without needing secondsLeft as a dependency. secondsLeft
+  // changes every second (see the countdown effect above); if it were listed
+  // as a dependency of the polling effect, that effect would tear down and
+  // recreate its setInterval every second too — and since SEPAY_POLL_MS
+  // (4000ms) is longer than that, the poll interval would always be cleared
+  // before it ever got a chance to fire, so payment status would never
+  // actually be checked even after the backend confirmed the transfer.
+  const secondsLeftRef = useRef(secondsLeft);
+  useEffect(() => {
+    secondsLeftRef.current = secondsLeft;
+  }, [secondsLeft]);
+
   // Poll the request status until the SePay webhook marks it completed
   useEffect(() => {
-    if (secondsLeft <= 0) return;
     let cancelled = false;
 
     const poll = setInterval(async () => {
+      if (secondsLeftRef.current <= 0) {
+        clearInterval(poll);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("topup_requests")
         .select("status")
@@ -1159,7 +1176,7 @@ function SePayQrPanel({ request, onConfirmed, onCancel }) {
       cancelled = true;
       clearInterval(poll);
     };
-  }, [request.id, secondsLeft, onConfirmed]);
+  }, [request.id, onConfirmed]);
 
   function copy(text, key) {
     if (!text) return;
@@ -1250,7 +1267,50 @@ function SePayQrPanel({ request, onConfirmed, onCancel }) {
   );
 }
 
+/* --- Top-up Success Popup ------------------------------------------------
+   Shown as a fixed overlay centered on screen (not an inline card in the
+   page flow) so it's guaranteed to be visible the moment a top-up is
+   confirmed, regardless of scroll position. */
+function TopUpSuccessPopup({ amount, onClose }) {
+  // Lock page scroll while the popup is open, same as AuthModal
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
+
+  // Close on Escape
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="authmodal-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="authmodal topup-success-modal" role="dialog" aria-modal="true">
+        <button className="authmodal__close" onClick={onClose} aria-label="Đóng">
+          <X size={18} />
+        </button>
+        <div className="topup-success">
+          <Check size={22} />
+          <h3>Nạp tiền thành công!</h3>
+          <p>{Number(amount).toLocaleString("vi-VN")}₫ đã được cộng vào ví ACX của bạn.</p>
+          <button className="btn btn--solid" onClick={onClose}>
+            Đã hiểu
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* --- Top-up Page ---------------------------------------------------------------- */
+const MIN_TOPUP_AMOUNT = 10000;
+
 function TopUpPage({ user, onAuthOpen, profile, onWalletChange }) {
   const quickAmounts = [50000, 100000, 200000, 500000, 1000000];
   const [amount, setAmount] = useState(null);
@@ -1258,6 +1318,7 @@ function TopUpPage({ user, onAuthOpen, profile, onWalletChange }) {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [sepayRequest, setSepayRequest] = useState(null);
 
   const balance = (profile?.wallet_balance ?? 0).toLocaleString("vi-VN") + "₫";
@@ -1271,11 +1332,17 @@ function TopUpPage({ user, onAuthOpen, profile, onWalletChange }) {
     const digits = e.target.value.replace(/[^\d]/g, "");
     setCustomAmount(digits);
     setAmount(digits ? Number(digits) : null);
+    setErrorMsg("");
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!amount) return;
+
+    if (amount < MIN_TOPUP_AMOUNT) {
+      setErrorMsg(`Số tiền nạp tối thiểu là ${MIN_TOPUP_AMOUNT.toLocaleString("vi-VN")}₫.`);
+      return;
+    }
 
     setErrorMsg("");
     setLoading(true);
@@ -1299,6 +1366,7 @@ function TopUpPage({ user, onAuthOpen, profile, onWalletChange }) {
   function handleSepayConfirmed() {
     setSepayRequest(null);
     setSubmitted(true);
+    setShowSuccessPopup(true);
     onWalletChange?.();
   }
 
@@ -1352,6 +1420,7 @@ function TopUpPage({ user, onAuthOpen, profile, onWalletChange }) {
                   className="btn btn--outline"
                   onClick={() => {
                     setSubmitted(false);
+                    setShowSuccessPopup(false);
                     setAmount(null);
                     setCustomAmount("");
                   }}
@@ -1389,13 +1458,16 @@ function TopUpPage({ user, onAuthOpen, profile, onWalletChange }) {
                     onChange={handleCustomChange}
                   />
                 </div>
+                <span className="topup-form__hint">
+                  Số tiền nạp tối thiểu {MIN_TOPUP_AMOUNT.toLocaleString("vi-VN")}₫
+                </span>
 
                 {errorMsg && <div className="authmodal__error">{errorMsg}</div>}
 
                 <button
                   type="submit"
                   className="btn btn--solid topup-form__submit"
-                  disabled={!amount || loading}
+                  disabled={!amount || amount < MIN_TOPUP_AMOUNT || loading}
                 >
                   {loading ? (
                     <>
@@ -1413,6 +1485,10 @@ function TopUpPage({ user, onAuthOpen, profile, onWalletChange }) {
           </Reveal>
         )}
       </div>
+
+      {showSuccessPopup && (
+        <TopUpSuccessPopup amount={amount} onClose={() => setShowSuccessPopup(false)} />
+      )}
     </section>
   );
 }
@@ -2558,6 +2634,7 @@ function Style() {
       .topup-quick__btn:hover { border-color: var(--accent); color: var(--accent-soft); }
       .topup-quick__btn--active { border-color: var(--accent); background: rgba(201,162,39,0.12); color: var(--accent-soft); }
       .topup-input { margin-top: 2px; }
+      .topup-form__hint { font-size: .78rem; color: var(--muted); margin-top: 6px; }
       .topup-methods { display: flex; flex-direction: column; gap: 10px; }
       .topup-methods__btn {
         text-align: left; padding: 13px 16px; border-radius: 10px; border: 1px solid var(--border);
@@ -2574,6 +2651,9 @@ function Style() {
       }
       .topup-success svg { color: var(--accent); background: rgba(201,162,39,0.14); border-radius: 999px; padding: 10px; width: 42px; height: 42px; box-sizing: content-box; }
       .topup-success p { max-width: 380px; }
+      .topup-success-modal { max-width: 400px; padding: 44px 32px 34px; }
+      .topup-success-modal .topup-success { padding: 0; }
+      .topup-success-modal .btn { margin-top: 8px; }
 
       /* SePay QR panel */
       .sepay-panel {
